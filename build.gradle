@@ -1,0 +1,86 @@
+/*
+ * # Write the following settings to ~/.gradle/gradle.properties
+ *
+ * REPO_DEPLOYMENT_USERNAME=deployment
+ * REPO_DEPLOYMENT_PASSWORD=deployment123
+ * REPO_DEPLOYMENT_URL=http://dns-of-server:8081/nexus/content/repositories
+ *
+ */
+
+/*
+ * The gradle wrapper generation.
+ */
+task wrapper(type:Wrapper) {
+  gradleVersion = '1.10'
+}
+
+//apply from: 'package.gradle'
+
+repositories {
+    mavenCentral()
+    maven {
+        url "${REPO_DEPLOYMENT_URL}/releases"
+        credentials {
+            username REPO_DEPLOYMENT_USERNAME
+            password REPO_DEPLOYMENT_PASSWORD
+        }
+    }
+} 
+
+def AVersion = project.hasProperty("AVersion") ? project.getProperty("AVersion"): "1.0.0.+"
+def BVersion = project.hasProperty("BVersion") ? project.getProperty("BVersion"): "1.0.0.+"
+
+configurations {
+    arts
+}
+
+dependencies {
+    arts "com.example.groupIdA:artifactIdA:${AVersion}@zip"
+    arts "com.example.groupIdB:artifactIdB:${BVersion}@zip"
+}
+
+task prepare() {}
+
+
+task fetchArtifact << {
+    description = "Download some artifacts from nexus server"
+    File outputDir = file("pool")
+
+    Set<ResolvedArtifact> artifacts = configurations.arts.resolvedConfiguration.resolvedArtifacts
+    for (ResolvedArtifact artifact : artifacts) {
+        copy {
+            from zipTree(artifact.file)
+            into "${outputDir}/${artifact.name}"
+            include "releasenote.txt"
+        }
+    }
+}
+
+task combineReleaseNotes << {
+    description = "Combine multiple release notes"
+    File outputDir = file("pool")
+
+    new File( "${outputDir}/releasenotes.txt" ).withWriter { w ->
+        configurations.arts.resolvedConfiguration.resolvedArtifacts.each { arti ->
+            new File("${outputDir}/${arti.name}/releasenote.txt").withReader { r ->
+                w << r << '\n'
+            }
+        }
+    }
+}
+
+task combineTitles() << {
+    description = "Combine multiple titles"
+    File outputDir = file("pool")
+
+    new File( "${outputDir}/titles.txt" ).withWriter { w ->
+        w << 'Testing Promoted: '
+        configurations.arts.resolvedConfiguration.resolvedArtifacts.each { arti ->
+            w << arti.name << ' ' << arti.moduleVersion.id.version << ', '
+        }
+    }
+}
+
+prepare.dependsOn fetchArtifact
+combineReleaseNotes.dependsOn fetchArtifact
+combineTitles.dependsOn fetchArtifact
